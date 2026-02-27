@@ -150,6 +150,13 @@
 			color: var(--muted);
 		}
 
+		/* Mapping panel styles */
+		.mapping-panel { margin-top: 12px; display: none; }
+		.mapping-panel.visible { display: block; }
+		.mapping-summary { cursor: pointer; }
+		.mapping-grid { display: grid; gap: 8px; margin-top: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+		.align-end { align-self: end; }
+
 		.error {
 			margin-top: 8px;
 			color: var(--danger);
@@ -168,16 +175,32 @@
 				<label for="csvFile">Bank CSV file</label>
 				<input id="csvFile" type="file" accept=".csv,text/csv" />
 			</div>
-
-			<div>
-				<label for="budgetInput">Monthly budget ($)</label>
-				<input id="budgetInput" type="number" min="0" step="0.01" placeholder="e.g. 3000" />
-			</div>
-
 			<div>
 				<button id="analyzeBtn" type="button">Analyze Spending</button>
 			</div>
 		</section>
+
+			<details id="mappingPanel" class="mapping-panel">
+				<summary class="mapping-summary">Column mapping (advanced)</summary>
+				<div class="mapping-grid">
+					<div>
+						<label for="mapAmount">Amount column</label>
+						<select id="mapAmount"><option value="">(auto)</option></select>
+					</div>
+					<div>
+						<label for="mapDescription">Description column</label>
+						<select id="mapDescription"><option value="">(auto)</option></select>
+					</div>
+					<div>
+						<label for="mapType">Type/Tag column</label>
+						<select id="mapType"><option value="">(auto)</option></select>
+					</div>
+					<div class="align-end">
+						<button id="applyMapping" type="button">Apply mapping</button>
+					</div>
+				</div>
+				<p class="note">Use this when your bank uses nonstandard headers.</p>
+			</details>
 
 		<div class="error" id="error"></div>
 
@@ -185,14 +208,6 @@
 			<article class="card">
 				<h3>Total Spending</h3>
 				<div class="value" id="totalSpending">$0.00</div>
-			</article>
-			<article class="card">
-				<h3>Budget</h3>
-				<div class="value" id="budgetValue">$0.00</div>
-			</article>
-			<article class="card">
-				<h3>Remaining</h3>
-				<div class="value" id="remainingValue">$0.00</div>
 			</article>
 		</section>
 
@@ -205,31 +220,33 @@
 
 	<script>
 		const csvFileInput = document.getElementById('csvFile');
-		const budgetInput = document.getElementById('budgetInput');
 		const analyzeBtn = document.getElementById('analyzeBtn');
 		const errorEl = document.getElementById('error');
 		const totalSpendingEl = document.getElementById('totalSpending');
-		const budgetValueEl = document.getElementById('budgetValue');
-		const remainingValueEl = document.getElementById('remainingValue');
 		const chartCanvas = document.getElementById('spendingChart');
 
 		let chart;
 
 		const categoryRules = [
 			{ name: 'Housing', keywords: ['rent', 'mortgage', 'apartment', 'hoa', 'property management'] },
-			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill', 'paymentus'] },
-			{ name: 'Groceries', keywords: ['grocery', 'supermarket', 'trader joe', 'costco', 'whole foods', 'aldi', 'kroger'] },
-			{ name: 'Food & Dining', keywords: ['restaurant', 'cafe', 'coffee', 'doordash', 'uber eats', 'grubhub', 'pizza', 'taco'] },
-			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'shell', 'chevron', 'exxon', 'metro', 'parking', 'fedex', 'dhl'] },
+			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill', 'paymentus', 'utility bill'] },
+			{ name: 'Groceries', keywords: ['grocery', 'supermarket', "trader joe", 'costco', 'whole foods', 'aldi', 'kroger'] },
+			{ name: 'Food & Dining', keywords: ['restaurant', 'cafe', 'coffee', 'doordash', 'ubereats', 'uber eats', 'grubhub', 'pizza', 'taco'] },
+			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'gas', 'shell', 'chevron', 'exxon', 'metro', 'parking', 'parking fee', 'fedex', 'dhl'] },
 			{ name: 'Entertainment', keywords: ['netflix', 'spotify', 'hulu', 'cinema', 'movie', 'concert', 'game', 'steam'] },
 			{ name: 'Health', keywords: ['pharmacy', 'cvs', 'walgreens', 'doctor', 'clinic', 'hospital', 'dental', 'vision'] },
-			{ name: 'Shopping', keywords: ['amazon', 'target', 'walmart', 'best buy', 'ikea', 'ebay', 'shop'] },
-			{ name: 'Travel', keywords: ['airbnb', 'airline', 'hotel', 'expedia', 'booking', 'southwest', 'delta', 'rockettrave'] },
-			{ name: 'Subscriptions', keywords: ['subscription', 'adobe', 'icloud', 'google one', 'microsoft 365', 'digitalocean'] },
+			{ name: 'Shopping', keywords: ['amazon', 'target', 'walmart', 'best buy', 'bestbuy', 'ikea', 'ebay', 'shop'] },
+			{ name: 'Travel', keywords: ['airbnb', 'airline', 'hotel', 'expedia', 'booking', 'southwest', 'delta', 'rockettrave', 'flight'] },
+			{ name: 'Subscriptions', keywords: ['subscription', 'subscription fee', 'adobe', 'icloud', 'google one', 'microsoft 365', 'digitalocean'] },
 			{ name: 'Insurance', keywords: ['insurance', 'geico', 'state farm', 'progressive'] },
-			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'paypal transfer'] },
+			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'cashapp', 'paypal transfer'] },
 			{ name: 'Income', keywords: ['payroll', 'salary', 'deposit', 'refund', 'income', 'venmo cashout'] }
 		];
+
+		// Detected headers and custom mapping state
+		let detectedHeaders = [];
+		const mapping = { amount: '', description: '', type: '' };
+
 
 		function normalizeHeader(header) {
 			return header.toLowerCase().trim().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -287,6 +304,11 @@
 			}
 
 			const headers = parsedRows[0].map((header) => normalizeHeader(header));
+			const rawHeaders = parsedRows[0].map((h) => h.trim());
+			detectedHeaders = headers.map((h, i) => ({ key: h, raw: rawHeaders[i] }));
+			// populate mapping selects if present
+			setTimeout(populateMappingSelects, 0);
+
 			return parsedRows.slice(1).map((values) => {
 				const mapped = {};
 				headers.forEach((header, index) => {
@@ -296,9 +318,58 @@
 			});
 		}
 
+		function populateMappingSelects() {
+			const panel = document.getElementById('mappingPanel');
+			const mapAmount = document.getElementById('mapAmount');
+			const mapDescription = document.getElementById('mapDescription');
+			const mapType = document.getElementById('mapType');
+
+			if (!detectedHeaders || !detectedHeaders.length) return;
+			panel.classList.add('visible');
+			[mapAmount, mapDescription, mapType].forEach((sel) => {
+				// clear previous options except the first
+				while (sel.options.length > 1) sel.remove(1);
+				detectedHeaders.forEach((h) => {
+					const opt = document.createElement('option');
+					opt.value = h.key;
+					opt.textContent = `${h.raw} → ${h.key}`;
+					sel.appendChild(opt);
+				});
+			});
+		}
+
+		csvFileInput.addEventListener('change', async (e) => {
+			const file = e.target.files?.[0];
+			if (!file) return;
+			try {
+				const text = await file.text();
+				// parse to populate headers (we ignore result rows here)
+				parseCSV(text);
+			} catch (err) {
+				// ignore
+			}
+		});
+
+		document.getElementById('applyMapping').addEventListener('click', () => {
+			const a = document.getElementById('mapAmount').value;
+			const d = document.getElementById('mapDescription').value;
+			const t = document.getElementById('mapType').value;
+			mapping.amount = a || '';
+			mapping.description = d || '';
+			mapping.type = t || '';
+			const msg = `Mapping applied: amount=${mapping.amount || '(auto)'}, description=${mapping.description || '(auto)'}, type=${mapping.type || '(auto)'}.`;
+			errorEl.textContent = msg;
+			setTimeout(() => (errorEl.textContent = ''), 3500);
+		});
+
 		function findKey(keys, aliases) {
+			// If user provided explicit mapping, prefer it
+			if (mapping && mapping.amount) {
+				// mapping.amount might be requested elsewhere; this function is generic, so don't override here
+			}
 			const exact = keys.find((key) => aliases.includes(key));
 			if (exact) return exact;
+			// fallback: any key containing an alias token
 			return keys.find((key) => aliases.some((alias) => key.includes(alias)));
 		}
 
@@ -324,10 +395,10 @@
 
 		function findAmount(row) {
 			const keys = Object.keys(row);
-			const amountKey = findKey(keys, ['amount', 'transaction amount', 'posted amount', 'value']);
-			const debitKey = findKey(keys, ['debit', 'withdrawal', 'outflow', 'money out', 'payment']);
-			const creditKey = findKey(keys, ['credit', 'deposit', 'inflow', 'money in']);
-			const typeKey = findKey(keys, ['type', 'transaction type', 'dr cr', 'debit credit']);
+			const amountKey = mapping.amount || findKey(keys, ['amount', 'transaction amount', 'posted amount', 'value']);
+			const debitKey = mapping.debit || findKey(keys, ['debit', 'withdrawal', 'outflow', 'money out', 'payment']);
+			const creditKey = mapping.credit || findKey(keys, ['credit', 'deposit', 'inflow', 'money in']);
+			const typeKey = mapping.type || findKey(keys, ['type', 'transaction type', 'dr cr', 'debit credit']);
 
 			if (amountKey) {
 				return inferSignedAmount(row[amountKey], typeKey ? row[typeKey] : '');
@@ -357,7 +428,7 @@
 
 		function findDescription(row) {
 			const keys = Object.keys(row);
-			const descriptionKey = findKey(keys, ['description', 'merchant', 'details', 'name', 'memo', 'transaction']);
+			const descriptionKey = mapping.description || findKey(keys, ['description', 'merchant', 'details', 'name', 'memo', 'transaction']);
 			const locationKey = findKey(keys, ['city', 'state', 'location']);
 			const primary = descriptionKey ? row[descriptionKey] : '';
 			const secondary = locationKey ? row[locationKey] : '';
@@ -370,12 +441,51 @@
 			return /\b(payment|autopay|transfer|zelle|cash ?app|venmo cashout|deposit|refund|salary|payroll|credit card payment|ach payment)\b/.test(description);
 		}
 
+		function extractMerchant(description) {
+			if (!description) return '';
+			// Normalize
+			let d = description.replace(/\s+/g, ' ').trim();
+			// common PayPal pattern: "MERCHANT -PAYPAL PURCHASE ..." or "PAYPAL PURCHASE MERCHANT"
+			const pp = /(?:-?\s*)?paypal purchase(?:\s*-?\s*)([A-Z0-9 &.'-]+)?/i.exec(d);
+			if (pp && pp[1]) {
+				return pp[1].toLowerCase().trim();
+			}
+			// try merchant before a dash
+			const dashBefore = /([A-Z0-9 &.'-]{3,})\s*-\s*paypal purchase/i.exec(d);
+			if (dashBefore && dashBefore[1]) return dashBefore[1].toLowerCase().trim();
+			// fallback: take first token groups that look like a brand
+			const tokens = d.split(/\s+-\s+|\s{2,}|\s+\|\s+/).map(s => s.replace(/[^a-z0-9 &.'-]/gi,'').trim()).filter(Boolean);
+			if (tokens.length) {
+				return tokens[0].toLowerCase();
+			}
+			return '';
+		}
+
 		function categorize(description) {
+			const desc = (description || '').toLowerCase();
+			const merchant = extractMerchant(desc);
+
+			// prefer merchant-based matching when merchant extracted
+			const target = merchant || desc;
+
 			for (const rule of categoryRules) {
-				if (rule.keywords.some((word) => description.includes(word))) {
-					return rule.name;
+				for (const kw of rule.keywords) {
+					if (typeof kw === 'string') {
+						if (target.includes(kw)) return rule.name;
+					} else if (kw instanceof RegExp) {
+						if (kw.test(target)) return rule.name;
+					}
 				}
 			}
+
+			// fallback: try token matching
+			const tokens = target.split(/\s+/).filter(Boolean);
+			for (const t of tokens) {
+				for (const rule of categoryRules) {
+					if (rule.keywords.some(k => typeof k === 'string' && k === t)) return rule.name;
+				}
+			}
+
 			return 'Other';
 		}
 
@@ -509,14 +619,7 @@
 					return;
 				}
 
-				const budget = Math.max(0, toNumber(budgetInput.value));
-				const remaining = budget - totalSpending;
-
 				totalSpendingEl.textContent = currency(totalSpending);
-				budgetValueEl.textContent = currency(budget);
-				remainingValueEl.textContent = currency(remaining);
-				remainingValueEl.className = `value ${remaining >= 0 ? 'good' : 'bad'}`;
-
 				renderChart(byCategory);
 			} catch (error) {
 				errorEl.textContent = 'Could not read the CSV file. Please verify the format and try again.';
