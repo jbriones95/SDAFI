@@ -41,13 +41,13 @@
 			background: var(--bg);
 			color: var(--text);
 			min-height: 100vh;
-			display: grid;
-			place-items: center;
+			display: block;
 			padding: 24px;
 		}
 
 		.app {
-			width: min(100%, 980px);
+			width: 100%;
+			max-width: 980px;
 			background: var(--panel);
 			border: 1px solid var(--border);
 			border-radius: 14px;
@@ -69,7 +69,7 @@
 			margin-top: 16px;
 			display: grid;
 			gap: 12px;
-			grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 			align-items: end;
 		}
 
@@ -103,7 +103,7 @@
 			margin-top: 18px;
 			display: grid;
 			gap: 10px;
-			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 		}
 
 		.card {
@@ -138,10 +138,17 @@
 			border: 1px solid var(--border);
 			border-radius: 12px;
 			padding: 12px;
-			min-height: 360px;
 			display: grid;
 			grid-template-columns: 1fr;
 			align-items: center;
+			min-height: 360px;
+		}
+
+		/* ensure the canvas fills available space responsively */
+		#spendingChart {
+			width: 100% !important;
+			height: 100% !important;
+			max-height: 520px;
 		}
 
 		.note {
@@ -156,6 +163,41 @@
 		.mapping-summary { cursor: pointer; }
 		.mapping-grid { display: grid; gap: 8px; margin-top: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 		.align-end { align-self: end; }
+
+		/* Uncategorized panel styles */
+		.uncat-panel { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: none; }
+		.uncat-title { margin: 0; font-size: 1rem; }
+		.uncat-list { margin-top: 8px; display: grid; gap: 8px; }
+		.uncat-row { display:flex; gap:8px; align-items:center; }
+		.uncat-merchant { flex:1; font-weight:600; }
+		.uncat-amount { width:110px; text-align:right; }
+		.uncat-count { width:70px; text-align:right; color:var(--muted); }
+		.uncat-actions { width:260px; }
+		.uncat-footer { margin-top:8px; text-align:right; }
+
+		/* Mobile responsiveness */
+		@media (max-width: 720px) {
+			body { padding: 12px; }
+			.app { padding: 14px; border-radius: 12px; }
+			h1 { font-size: 1.2rem; }
+			.controls { grid-template-columns: 1fr; }
+			.mapping-grid { grid-template-columns: 1fr; }
+			.summary { grid-template-columns: 1fr; }
+			.chart-wrap { min-height: 260px; padding: 10px; }
+			#spendingChart { max-height: 360px; }
+			.uncat-row { flex-wrap: wrap; gap: 6px; }
+			.uncat-amount, .uncat-count, .uncat-actions { width: 100%; text-align: left; }
+			.uncat-actions { margin-top:6px; }
+			.mapping-summary { padding: 8px 4px; }
+		}
+
+		@media (max-width: 420px) {
+			h1 { font-size: 1.05rem; }
+			.value { font-size: 1.15rem; }
+			input, select, button { font-size: 0.95rem; padding: 10px; }
+			.chart-wrap { min-height: 220px; }
+			#spendingChart { max-height: 300px; }
+		}
 
 		.error {
 			margin-top: 8px;
@@ -173,7 +215,7 @@
 		<section class="controls">
 			<div>
 				<label for="csvFile">Bank CSV file</label>
-				<input id="csvFile" type="file" accept=".csv,text/csv" />
+				<input id="csvFile" type="file" accept=".csv,text/csv" multiple />
 			</div>
 			<div>
 				<button id="analyzeBtn" type="button">Analyze Spending</button>
@@ -215,6 +257,13 @@
 			<canvas id="spendingChart" aria-label="Spending by category chart"></canvas>
 		</section>
 
+		<section id="uncategorizedPanel" class="uncat-panel">
+			<h3 class="uncat-title">Uncategorized Merchants</h3>
+			<p class="note">Quickly assign categories to common merchants so future imports auto-categorize them.</p>
+			<div id="uncatList" class="uncat-list"></div>
+			<div class="uncat-footer"><button id="applyAllOverrides">Apply All</button></div>
+		</section>
+
 		<p class="note">Categories are auto-detected from merchant descriptions (food, groceries, transport, housing, utilities, entertainment, health, shopping, and more).</p>
 	</main>
 
@@ -229,23 +278,27 @@
 
 		const categoryRules = [
 			{ name: 'Housing', keywords: ['rent', 'mortgage', 'apartment', 'hoa', 'property management'] },
-			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill', 'paymentus', 'utility bill'] },
+			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill', 'paymentus', 'utility bill', /xcel energy|xcelenergy/] },
 			{ name: 'Groceries', keywords: ['grocery', 'supermarket', "trader joe", 'costco', 'whole foods', 'aldi', 'kroger'] },
-			{ name: 'Food & Dining', keywords: ['restaurant', 'cafe', 'coffee', 'doordash', 'ubereats', 'uber eats', 'grubhub', 'pizza', 'taco'] },
-			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'gas', 'shell', 'chevron', 'exxon', 'metro', 'parking', 'parking fee', 'fedex', 'dhl'] },
-			{ name: 'Entertainment', keywords: ['netflix', 'spotify', 'hulu', 'cinema', 'movie', 'concert', 'game', 'steam'] },
+			{ name: 'Food & Dining', keywords: ['restaurant', 'cafe', 'coffee', 'doordash', 'ubereats', 'uber eats', 'grubhub', 'pizza', 'taco', 'pod foods'] },
+			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'gas', 'shell', 'chevron', 'exxon', 'metro', 'parking', 'parking fee', 'fedex', 'dhl', 'uber eats'] },
+			{ name: 'Entertainment', keywords: ['netflix', 'spotify', 'hulu', 'cinema', 'movie', 'concert', 'game', 'steam', 'audible'] },
 			{ name: 'Health', keywords: ['pharmacy', 'cvs', 'walgreens', 'doctor', 'clinic', 'hospital', 'dental', 'vision'] },
-			{ name: 'Shopping', keywords: ['amazon', 'target', 'walmart', 'best buy', 'bestbuy', 'ikea', 'ebay', 'shop'] },
+			{ name: 'Shopping', keywords: ['amazon', 'target', 'walmart', 'best buy', 'bestbuy', 'ikea', 'ebay', 'shop', 'poshmark', /amazon media eu|amazon services|amazon.com/i] },
 			{ name: 'Travel', keywords: ['airbnb', 'airline', 'hotel', 'expedia', 'booking', 'southwest', 'delta', 'rockettrave', 'flight'] },
-			{ name: 'Subscriptions', keywords: ['subscription', 'subscription fee', 'adobe', 'icloud', 'google one', 'microsoft 365', 'digitalocean'] },
+			{ name: 'Subscriptions', keywords: ['subscription', 'subscription fee', 'adobe', 'icloud', 'google one', 'microsoft 365', 'digitalocean', 'patreon', 'audible'] },
 			{ name: 'Insurance', keywords: ['insurance', 'geico', 'state farm', 'progressive'] },
-			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'cashapp', 'paypal transfer'] },
-			{ name: 'Income', keywords: ['payroll', 'salary', 'deposit', 'refund', 'income', 'venmo cashout'] }
+			{ name: 'Investments', keywords: ['vanguard', 'buy investment', 'investment', 'robinhood'] },
+			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'cashapp', /paypal/i, 'paypal transfer', 'paypal inst xfer', /m1 payments|m1 payments~?/i] },
+			{ name: 'Payments', keywords: ['credit card payment', 'card payment', 'epayment', 'crc ardpmt', 'crcardpmt', 'credit crd', /capital one|capitalone|amex epayment|amex epay/i, /chase credit crd autopay/i] },
+			{ name: 'Income', keywords: ['payroll', 'salary', 'deposit', 'refund', 'income', 'venmo cashout', 'stripe transfer', 'google youtube'] }
 		];
 
 		// Detected headers and custom mapping state
 		let detectedHeaders = [];
 		const mapping = { amount: '', description: '', type: '' };
+		let lastRows = null;
+		let userOverrides = {};
 
 
 		function normalizeHeader(header) {
@@ -339,11 +392,15 @@
 		}
 
 		csvFileInput.addEventListener('change', async (e) => {
-			const file = e.target.files?.[0];
-			if (!file) return;
+			const files = Array.from(e.target.files || []);
+			if (!files.length) return;
+			if (files.length > 3) {
+				errorEl.textContent = 'Only up to 3 files will be analyzed — extra files ignored.';
+				setTimeout(() => (errorEl.textContent = ''), 3000);
+			}
+			// parse headers from first file to populate mapping selects
 			try {
-				const text = await file.text();
-				// parse to populate headers (we ignore result rows here)
+				const text = await files[0].text();
 				parseCSV(text);
 			} catch (err) {
 				// ignore
@@ -432,38 +489,58 @@
 			const locationKey = findKey(keys, ['city', 'state', 'location']);
 			const primary = descriptionKey ? row[descriptionKey] : '';
 			const secondary = locationKey ? row[locationKey] : '';
-			return `${primary} ${secondary}`.toLowerCase().replace(/\s+/g, ' ').trim();
+			return cleanDescription(`${primary} ${secondary}`);
+		}
+
+		function cleanDescription(raw) {
+			if (!raw) return '';
+			let s = String(raw || '');
+			// remove common bank noise
+			s = s.replace(/~\s*Future Amount:.*$/i, '');
+			s = s.replace(/~\s*Tran:.*$/i, '');
+			s = s.replace(/PAYMENTS ISA[^\n]*/ig, '');
+			s = s.replace(/\bXXXXXX\d+\b/g, '');
+			s = s.replace(/\bACHDW\b/ig, '');
+			s = s.replace(/\s+/g, ' ').trim();
+			return s.toLowerCase();
 		}
 
 		function isLikelyNonExpense(description) {
 			if (!description) return false;
 			if (description.includes('paypal purchase')) return false;
-			return /\b(payment|autopay|transfer|zelle|cash ?app|venmo cashout|deposit|refund|salary|payroll|credit card payment|ach payment)\b/.test(description);
+			// treat card or loan payments, transfers, deposits, payroll as non-expense
+			return /\b(payment|autopay|transfer|zelle|cash ?app|venmo cashout|deposit|refund|salary|payroll|credit card payment|ach payment|credit crd|crcardpmt|epayment|card payment|requested transfer|internet transfer|inst xfer|inst xfer)\b/.test(description);
 		}
 
 		function extractMerchant(description) {
 			if (!description) return '';
-			// Normalize
-			let d = description.replace(/\s+/g, ' ').trim();
-			// common PayPal pattern: "MERCHANT -PAYPAL PURCHASE ..." or "PAYPAL PURCHASE MERCHANT"
-			const pp = /(?:-?\s*)?paypal purchase(?:\s*-?\s*)([A-Z0-9 &.'-]+)?/i.exec(d);
-			if (pp && pp[1]) {
-				return pp[1].toLowerCase().trim();
-			}
-			// try merchant before a dash
-			const dashBefore = /([A-Z0-9 &.'-]{3,})\s*-\s*paypal purchase/i.exec(d);
-			if (dashBefore && dashBefore[1]) return dashBefore[1].toLowerCase().trim();
-			// fallback: take first token groups that look like a brand
-			const tokens = d.split(/\s+-\s+|\s{2,}|\s+\|\s+/).map(s => s.replace(/[^a-z0-9 &.'-]/gi,'').trim()).filter(Boolean);
-			if (tokens.length) {
-				return tokens[0].toLowerCase();
-			}
+			let d = cleanDescription(description);
+			// Zelle pattern: 'Zelle payment from X to Y' or 'Zelle payment from X'
+			const z = /zelle payment from\s+([^\-]+?)\s+to\s+([^\n]+)/i.exec(d);
+			if (z && z[1]) return z[1].trim();
+			const z2 = /zelle payment from\s+([^\n]+)/i.exec(d);
+			if (z2 && z2[1]) return z2[1].trim();
+
+			// PayPal/Stripe style: 'MERCHANT -PAYPAL PURCHASE' or 'PAYPAL TRANSFER' etc
+			const pp = /([a-z0-9 &.'-]{3,})\s*-?\s*paypal purchase/i.exec(description);
+			if (pp && pp[1]) return pp[1].toLowerCase().trim();
+
+			// PAYPAL TRANSFER / STRIPE TRANSFER as source token
+			if (/paypal transfer/i.test(description)) return 'paypal';
+			if (/stripe transfer/i.test(description)) return 'stripe';
+
+			// generic: split on long delimiters and take first meaningful token
+			const tokens = d.split(/\s+-\s+|\s{2,}|\s+\|\s+|,|~/).map(s => s.replace(/[^a-z0-9 &.'-]/gi,'').trim()).filter(Boolean);
+			if (tokens.length) return tokens[0];
 			return '';
 		}
 
 		function categorize(description) {
 			const desc = (description || '').toLowerCase();
 			const merchant = extractMerchant(desc);
+
+			// check user overrides first
+			if (merchant && userOverrides[merchant]) return userOverrides[merchant];
 
 			// prefer merchant-based matching when merchant extracted
 			const target = merchant || desc;
@@ -489,6 +566,86 @@
 			return 'Other';
 		}
 
+		function loadOverrides() {
+			try {
+				const raw = localStorage.getItem('csvcat_overrides');
+				userOverrides = raw ? JSON.parse(raw) : {};
+			} catch (e) {
+				userOverrides = {};
+			}
+		}
+
+		function saveOverride(merchant, category) {
+			if (!merchant) return;
+			userOverrides[merchant] = category;
+			localStorage.setItem('csvcat_overrides', JSON.stringify(userOverrides));
+		}
+
+		function renderUncategorizedPanel(uncatMap) {
+			const panel = document.getElementById('uncategorizedPanel');
+			const list = document.getElementById('uncatList');
+			list.innerHTML = '';
+			const entries = Object.entries(uncatMap || {})
+				.sort((a,b) => b[1].total - a[1].total)
+				.slice(0, 50);
+
+			if (!entries.length) {
+				panel.style.display = 'none';
+				return;
+			}
+
+			panel.style.display = 'block';
+
+			for (const [merchant, info] of entries) {
+				const row = document.createElement('div');
+				row.className = 'uncat-row';
+
+				const m = document.createElement('div'); m.className = 'uncat-merchant'; m.textContent = merchant;
+				const amt = document.createElement('div'); amt.className = 'uncat-amount'; amt.textContent = currency(info.total);
+				const cnt = document.createElement('div'); cnt.className = 'uncat-count'; cnt.textContent = `${info.count}`;
+
+				const actions = document.createElement('div'); actions.className = 'uncat-actions';
+				const sel = document.createElement('select');
+				const defaultOpt = document.createElement('option'); defaultOpt.value=''; defaultOpt.textContent='(choose category)'; sel.appendChild(defaultOpt);
+				for (const c of categoryRules.map(r=>r.name)) {
+					const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+				}
+				const btn = document.createElement('button'); btn.textContent = 'Assign'; btn.style.marginLeft='8px';
+
+				btn.addEventListener('click', () => {
+					const chosen = sel.value;
+					if (!chosen) return;
+					saveOverride(merchant, chosen);
+					btn.textContent = 'Saved';
+					btn.disabled = true;
+					setTimeout(() => {
+						btn.textContent = 'Assign';
+						btn.disabled = false;
+					}, 800);
+				});
+
+				actions.appendChild(sel);
+				actions.appendChild(btn);
+
+				row.appendChild(m);
+				row.appendChild(amt);
+				row.appendChild(cnt);
+				row.appendChild(actions);
+				list.appendChild(row);
+			}
+		}
+
+		document.getElementById('applyAllOverrides').addEventListener('click', () => {
+			// re-run analysis with saved overrides
+			if (!lastRows) return;
+			const { byCategory, totalSpending, uncategorized } = analyzeRows(lastRows);
+			totalSpendingEl.textContent = currency(totalSpending);
+			renderChart(byCategory);
+			renderUncategorizedPanel(uncategorized);
+		});
+
+		loadOverrides();
+
 		function currency(value) {
 			return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(value);
 		}
@@ -500,6 +657,7 @@
 			let positiveSpendCount = 0;
 			let negativeSpendTotal = 0;
 			let positiveSpendTotal = 0;
+			const uncategorized = {};
 
 			for (const row of rows) {
 				const description = findDescription(row);
@@ -545,9 +703,16 @@
 				const category = categorize(description);
 				byCategory[category] = (byCategory[category] || 0) + spend;
 				totalSpending += spend;
+
+				if (category === 'Other') {
+					const merchant = extractMerchant(description) || description || 'unknown';
+					if (!uncategorized[merchant]) uncategorized[merchant] = { count: 0, total: 0 };
+					uncategorized[merchant].count += 1;
+					uncategorized[merchant].total += spend;
+				}
 			}
 
-			return { byCategory, totalSpending };
+			return { byCategory, totalSpending, uncategorized };
 		}
 
 		function renderChart(byCategory) {
@@ -597,32 +762,40 @@
 		analyzeBtn.addEventListener('click', async () => {
 			errorEl.textContent = '';
 
-			const file = csvFileInput.files?.[0];
-			if (!file) {
-				errorEl.textContent = 'Please choose a CSV file first.';
+			const files = Array.from(csvFileInput.files || []);
+			if (!files.length) {
+				errorEl.textContent = 'Please choose at least one CSV file first.';
 				return;
 			}
 
+			const toRead = files.slice(0, 3);
+
 			try {
-				const text = await file.text();
-				const rows = parseCSV(text);
+				const texts = await Promise.all(toRead.map(f => f.text()));
+				const parsedLists = texts.map(t => parseCSV(t));
+				const rows = parsedLists.flat();
+				lastRows = rows;
 
 				if (!rows.length) {
-					errorEl.textContent = 'The CSV appears empty or invalid.';
+					errorEl.textContent = 'The CSV(s) appear empty or invalid.';
 					return;
 				}
 
-				const { byCategory, totalSpending } = analyzeRows(rows);
+				const { byCategory, totalSpending, uncategorized } = analyzeRows(rows);
 
 				if (!Object.keys(byCategory).length) {
-					errorEl.textContent = 'No spending transactions were found (expenses should be negative in most bank exports).';
+					errorEl.textContent = 'No spending transactions were found. If some merchants are uncategorized, assign them in the "Uncategorized Merchants" panel.';
+					// still render uncategorized panel
+					renderUncategorizedPanel(uncategorized);
 					return;
 				}
 
 				totalSpendingEl.textContent = currency(totalSpending);
 				renderChart(byCategory);
+				renderUncategorizedPanel(uncategorized);
 			} catch (error) {
-				errorEl.textContent = 'Could not read the CSV file. Please verify the format and try again.';
+				console.error(error);
+				errorEl.textContent = 'Could not read the CSV file(s). Please verify the format and try again.';
 			}
 		});
 	</script>
