@@ -209,6 +209,22 @@
 			min-height: 1.2em;
 			font-size: 0.9rem;
 		}
+
+		.period-container {
+			margin-top: 12px;
+			display: flex;
+			gap: 12px;
+			align-items: center;
+			flex-wrap: wrap;
+		}
+
+		.period-info {
+			font-weight: 600;
+		}
+
+		.period-range-text {
+			color: var(--muted);
+		}
 	</style>
 </head>
 <body>
@@ -260,8 +276,8 @@
 				<div class="value" id="housingValue">$0.00</div>
 			</article>
 			<article class="card">
-				<h3>Travel</h3>
-				<div class="value" id="travelValue">$0.00</div>
+				<h3>Transportation</h3>
+				<div class="value" id="transportationValue">$0.00</div>
 			</article>
 			<article class="card">
 				<h3>Food</h3>
@@ -865,12 +881,12 @@
 				renderChart(byCategory);
 				renderUncategorizedPanel(uncategorized);
 
-				// update core needs (housing, travel, food)
-				const housing = byCategory['Housing'] || 0;
-				const travel = byCategory['Travel'] || 0;
+				// update core needs (housing includes utilities, transportation, food)
+				const housing = (byCategory['Housing'] || 0) + (byCategory['Utilities'] || 0);
+				const travel = byCategory['Transportation'] || 0;
 				const food = (byCategory['Groceries'] || 0) + (byCategory['Food & Dining'] || 0);
 				document.getElementById('housingValue').textContent = currency(housing);
-				document.getElementById('travelValue').textContent = currency(travel);
+				document.getElementById('transportationValue').textContent = currency(travel);
 				document.getElementById('foodValue').textContent = currency(food);
 
 				// show period estimates if available
@@ -882,7 +898,7 @@
 					// show per-month for each core need
 					const months = periodMonths || 1;
 					document.getElementById('housingValue').textContent += ` (${currency(housing / months)}/mo)`;
-					document.getElementById('travelValue').textContent += ` (${currency(travel / months)}/mo)`;
+					document.getElementById('transportationValue').textContent += ` (${currency(travel / months)}/mo)`;
 					document.getElementById('foodValue').textContent += ` (${currency(food / months)}/mo)`;
 				}
 			} catch (error) {
