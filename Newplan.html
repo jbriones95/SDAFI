@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Adventist Budget Planner</title>
+	<style>
+		body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;max-width:900px;margin:24px auto;padding:0 18px;color:#111}
+		h1{font-size:1.4rem;margin-bottom:8px}
+		.row{display:flex;gap:12px;align-items:center;margin:10px 0}
+		label{width:220px;font-weight:600}
+		input[type=number]{width:180px;padding:6px;border:1px solid #ccc;border-radius:6px}
+		.card{border:1px solid #eee;padding:14px;border-radius:8px;background:#fbfbfb;margin-top:12px}
+		.big{font-size:1.1rem;font-weight:700}
+		.muted{color:#666;font-size:0.9rem}
+		.alloc{display:grid;grid-template-columns:1fr 120px;gap:8px;padding:6px 0}
+		.percent{color:#0b6efd;font-weight:700}
+		.note{font-size:0.9rem;color:#333;margin-top:12px}
+		footer{margin-top:18px;font-size:0.85rem;color:#666}
+	</style>
+</head>
+<body>
+	<h1>Budget Planner</h1>
+	<p class="muted">Enter monthly numbers; pick tithe & offering percent (10–15%).</p>
+
+	<div class="card">
+		<div class="row">
+			<label for="income">Monthly Net Income</label>
+			<input id="income" type="number" min="0" step="0.01" placeholder="e.g. 3500" />
+		</div>
+
+		<div class="row">
+			<label for="debt">Monthly Debt Payments</label>
+			<input id="debt" type="number" min="0" step="0.01" placeholder="total minimums" />
+		</div>
+
+		<div class="row">
+			<label for="fixed">Estimated Monthly Fixed Expenses</label>
+			<input id="fixed" type="number" min="0" step="0.01" placeholder="housing, utilities, food" />
+		</div>
+
+		<div class="row">
+			<label for="titheRange">Tithe & Offering (%)</label>
+			<div style="flex:1">
+				<input id="titheRange" type="range" min="10" max="15" step="0.5" value="10" style="width:100%" />
+				<div style="display:flex;justify-content:space-between;margin-top:6px;align-items:center">
+					<div class="muted">Slide between 10% and 15%</div>
+					<div class="big"><span id="tithePct">10</span>%</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="card" style="background:#fff">
+			<div class="alloc"><div>Tithe & Offering</div><div id="titheAmt" class="big">$0.00</div></div>
+			<div class="alloc"><div>Remaining Income</div><div id="remainingAmt">$0.00</div></div>
+			<hr />
+			<div class="alloc"><div>Needs (50%)</div><div id="needsAmt">$0.00</div></div>
+			<div class="alloc"><div>Savings / Investing (30%)</div><div id="saveAmt">$0.00</div></div>
+			<div class="alloc"><div>Guilt-free Spending (20%)</div><div id="funAmt">$0.00</div></div>
+			<div class="alloc"><div>Current Debt Payments (input)</div><div id="debtAmt">$0.00</div></div>
+			<div id="advice" class="note"></div>
+		</div>
+	</div>
+
+	<footer>Method: Pay tithe first, then automate the Ramit-style allocations. If you have high-interest debt, consider directing some savings to accelerated debt paydown.</footer>
+
+	<script>
+		const incomeEl = document.getElementById('income');
+		const debtEl = document.getElementById('debt');
+		const fixedEl = document.getElementById('fixed');
+		const titheRange = document.getElementById('titheRange');
+		const tithePct = document.getElementById('tithePct');
+		const titheAmt = document.getElementById('titheAmt');
+		const remainingAmt = document.getElementById('remainingAmt');
+		const needsAmt = document.getElementById('needsAmt');
+		const saveAmt = document.getElementById('saveAmt');
+		const funAmt = document.getElementById('funAmt');
+		const debtAmt = document.getElementById('debtAmt');
+		const advice = document.getElementById('advice');
+
+		function fmt(n){return (isFinite(n) ? '$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '$0.00');}
+
+		function update(){
+			const income = Math.max(0,parseFloat(incomeEl.value)||0);
+			const debt = Math.max(0,parseFloat(debtEl.value)||0);
+			const fixed = Math.max(0,parseFloat(fixedEl.value)||0);
+			const pct = parseFloat(titheRange.value);
+			tithePct.textContent = pct;
+
+			const tithe = income * pct/100;
+			const remaining = Math.max(0,income - tithe);
+
+			// Ramit-style allocation after tithe: 50% needs, 30% savings/invest, 20% fun
+			const needs = remaining * 0.50;
+			const savings = remaining * 0.30;
+			const fun = remaining * 0.20;
+
+			titheAmt.textContent = fmt(tithe);
+			remainingAmt.textContent = fmt(remaining);
+			needsAmt.textContent = fmt(needs);
+			saveAmt.textContent = fmt(savings);
+			funAmt.textContent = fmt(fun);
+			debtAmt.textContent = fmt(debt);
+
+			// Advice logic
+			let tips = [];
+			if(income===0){ tips.push('Enter your monthly net income to see recommendations.'); }
+			if(debt>0){
+				if(debt > savings){
+					tips.push('Your monthly debt payments exceed the suggested savings bucket — consider allocating more to debt paydown (especially for high-interest debt).');
+				} else {
+					tips.push('Automate the savings/investing allocation. Use the savings bucket to build emergency fund, then invest.');
+				}
+			} else {
+				tips.push('No debt entered — prioritize building 3–6 months emergency fund, then increase investments.');
+			}
+
+			if(fixed > needs){
+				tips.push('Your estimated fixed expenses exceed the 50% needs allocation; review fixed costs or reduce discretionary spending.');
+			}
+
+			advice.innerHTML = tips.map(t => '• '+t).join('<br>');
+		}
+
+		[incomeEl,debtEl,fixedEl,titheRange].forEach(el => el.addEventListener('input', update));
+		// initial
+		update();
+	</script>
+</body>
+</html>
+
