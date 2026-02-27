@@ -217,17 +217,17 @@
 
 		const categoryRules = [
 			{ name: 'Housing', keywords: ['rent', 'mortgage', 'apartment', 'hoa', 'property management'] },
-			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill'] },
+			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill', 'paymentus'] },
 			{ name: 'Groceries', keywords: ['grocery', 'supermarket', 'trader joe', 'costco', 'whole foods', 'aldi', 'kroger'] },
 			{ name: 'Food & Dining', keywords: ['restaurant', 'cafe', 'coffee', 'doordash', 'uber eats', 'grubhub', 'pizza', 'taco'] },
-			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'shell', 'chevron', 'exxon', 'metro', 'parking'] },
+			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'shell', 'chevron', 'exxon', 'metro', 'parking', 'fedex', 'dhl'] },
 			{ name: 'Entertainment', keywords: ['netflix', 'spotify', 'hulu', 'cinema', 'movie', 'concert', 'game', 'steam'] },
 			{ name: 'Health', keywords: ['pharmacy', 'cvs', 'walgreens', 'doctor', 'clinic', 'hospital', 'dental', 'vision'] },
 			{ name: 'Shopping', keywords: ['amazon', 'target', 'walmart', 'best buy', 'ikea', 'ebay', 'shop'] },
-			{ name: 'Travel', keywords: ['airbnb', 'airline', 'hotel', 'expedia', 'booking', 'southwest', 'delta'] },
-			{ name: 'Subscriptions', keywords: ['subscription', 'adobe', 'icloud', 'google one', 'microsoft 365'] },
+			{ name: 'Travel', keywords: ['airbnb', 'airline', 'hotel', 'expedia', 'booking', 'southwest', 'delta', 'rockettrave'] },
+			{ name: 'Subscriptions', keywords: ['subscription', 'adobe', 'icloud', 'google one', 'microsoft 365', 'digitalocean'] },
 			{ name: 'Insurance', keywords: ['insurance', 'geico', 'state farm', 'progressive'] },
-			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'paypal'] },
+			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'paypal transfer'] },
 			{ name: 'Income', keywords: ['payroll', 'salary', 'deposit', 'refund', 'income', 'venmo cashout'] }
 		];
 
@@ -361,7 +361,13 @@
 			const locationKey = findKey(keys, ['city', 'state', 'location']);
 			const primary = descriptionKey ? row[descriptionKey] : '';
 			const secondary = locationKey ? row[locationKey] : '';
-			return `${primary} ${secondary}`.toLowerCase().trim();
+			return `${primary} ${secondary}`.toLowerCase().replace(/\s+/g, ' ').trim();
+		}
+
+		function isLikelyNonExpense(description) {
+			if (!description) return false;
+			if (description.includes('paypal purchase')) return false;
+			return /\b(payment|autopay|transfer|zelle|cash ?app|venmo cashout|deposit|refund|salary|payroll|credit card payment|ach payment)\b/.test(description);
 		}
 
 		function categorize(description) {
@@ -380,20 +386,45 @@
 		function analyzeRows(rows) {
 			const byCategory = {};
 			let totalSpending = 0;
-			let negativeCount = 0;
-			let positiveCount = 0;
-
-			for (const row of rows) {
-				const amount = findAmount(row);
-				if (amount < 0) negativeCount += 1;
-				if (amount > 0) positiveCount += 1;
-			}
-
-			const treatPositiveAsSpending = negativeCount === 0 && positiveCount > 0;
+			let negativeSpendCount = 0;
+			let positiveSpendCount = 0;
+			let negativeSpendTotal = 0;
+			let positiveSpendTotal = 0;
 
 			for (const row of rows) {
 				const description = findDescription(row);
 				const amount = findAmount(row);
+				if (!amount || isLikelyNonExpense(description)) {
+					continue;
+				}
+
+				if (amount < 0) {
+					negativeSpendCount += 1;
+					negativeSpendTotal += Math.abs(amount);
+				}
+				if (amount > 0) {
+					positiveSpendCount += 1;
+					positiveSpendTotal += Math.abs(amount);
+				}
+			}
+
+			let treatPositiveAsSpending = false;
+			if (negativeSpendCount === 0 && positiveSpendCount > 0) {
+				treatPositiveAsSpending = true;
+			} else if (positiveSpendCount > 0 && negativeSpendCount > 0) {
+				const positiveDominates =
+					positiveSpendCount > negativeSpendCount * 1.5 ||
+					positiveSpendTotal > negativeSpendTotal * 1.25;
+				treatPositiveAsSpending = positiveDominates;
+			}
+
+			for (const row of rows) {
+				const description = findDescription(row);
+				const amount = findAmount(row);
+
+				if (!amount || isLikelyNonExpense(description)) {
+					continue;
+				}
 
 				const isExpense = treatPositiveAsSpending ? amount > 0 : amount < 0;
 				if (!isExpense) {
