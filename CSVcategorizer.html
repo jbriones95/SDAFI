@@ -53,6 +53,10 @@
 			border-radius: 14px;
 			padding: 20px;
 			box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+			display: flex;
+			flex-direction: column;
+			max-height: calc(100vh - 48px);
+			overflow: auto;
 		}
 
 		h1 {
@@ -138,17 +142,20 @@
 			border: 1px solid var(--border);
 			border-radius: 12px;
 			padding: 12px;
-			display: grid;
-			grid-template-columns: 1fr;
-			align-items: center;
-			min-height: 360px;
+			display: flex;
+			flex-direction: column;
+			align-items: stretch;
+			min-height: 260px;
+			height: min(60vh, calc(100vh - 260px));
+			flex: 1 1 auto;
+			overflow: hidden;
 		}
 
 		/* ensure the canvas fills available space responsively */
 		#spendingChart {
 			width: 100% !important;
 			height: 100% !important;
-			max-height: 520px;
+			max-height: none;
 		}
 
 		.note {
@@ -296,9 +303,9 @@
 			<div class="uncat-footer"><button id="applyAllOverrides">Apply All</button></div>
 		</section>
 
-		<div style="margin-top:12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-			<div id="periodInfo" class="note" style="font-weight:600"></div>
-			<div id="periodRange" class="note" style="color:var(--muted)"></div>
+		<div class="period-container">
+			<div id="periodInfo" class="note period-info"></div>
+			<div id="periodRange" class="note period-range-text"></div>
 		</div>
 
 		<p class="note">Categories are auto-detected from merchant descriptions (food, groceries, transport, housing, utilities, entertainment, health, shopping, and more).</p>
