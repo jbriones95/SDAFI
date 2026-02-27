@@ -175,6 +175,10 @@
 		.uncat-actions { width:260px; }
 		.uncat-footer { margin-top:8px; text-align:right; }
 
+		.period-row { margin-top:12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+		.period-info { font-weight:600; }
+		.period-range { color:var(--muted); }
+
 		/* Mobile responsiveness */
 		@media (max-width: 720px) {
 			body { padding: 12px; }
@@ -251,6 +255,18 @@
 				<h3>Total Spending</h3>
 				<div class="value" id="totalSpending">$0.00</div>
 			</article>
+			<article class="card">
+				<h3>Housing</h3>
+				<div class="value" id="housingValue">$0.00</div>
+			</article>
+			<article class="card">
+				<h3>Travel</h3>
+				<div class="value" id="travelValue">$0.00</div>
+			</article>
+			<article class="card">
+				<h3>Food</h3>
+				<div class="value" id="foodValue">$0.00</div>
+			</article>
 		</section>
 
 		<section class="chart-wrap">
@@ -263,6 +279,11 @@
 			<div id="uncatList" class="uncat-list"></div>
 			<div class="uncat-footer"><button id="applyAllOverrides">Apply All</button></div>
 		</section>
+
+		<div style="margin-top:12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+			<div id="periodInfo" class="note" style="font-weight:600"></div>
+			<div id="periodRange" class="note" style="color:var(--muted)"></div>
+		</div>
 
 		<p class="note">Categories are auto-detected from merchant descriptions (food, groceries, transport, housing, utilities, entertainment, health, shopping, and more).</p>
 	</main>
@@ -575,6 +596,38 @@
 			}
 		}
 
+		function parseDateFromRow(row) {
+			const keys = Object.keys(row);
+			const dateKey = findKey(keys, ['date', 'transaction date', 'posted date', 'post date', 'datetime', 'timestamp']);
+			if (!dateKey) return null;
+			const raw = row[dateKey];
+			if (!raw) return null;
+			return parseDateString(raw);
+		}
+
+		function parseDateString(s) {
+			if (!s) return null;
+			// try ISO first
+			let d = new Date(s);
+			if (!isNaN(d)) return d;
+			// try common formats: YYYY-MM-DD or M/D/YYYY or MM/DD/YYYY
+			const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+			if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+			const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(s);
+			if (slash) {
+				let year = Number(slash[3]);
+				if (year < 100) year += 2000;
+				return new Date(year, Number(slash[1]) - 1, Number(slash[2]));
+			}
+			// fallback: extract 4-digit year and nearby numbers
+			const bits = s.match(/(\d{4})/);
+			if (bits) {
+				const y = Number(bits[1]);
+				return new Date(y, 0, 1);
+			}
+			return null;
+		}
+
 		function saveOverride(merchant, category) {
 			if (!merchant) return;
 			userOverrides[merchant] = category;
@@ -659,9 +712,17 @@
 			let positiveSpendTotal = 0;
 			const uncategorized = {};
 
+			let minDate = null;
+			let maxDate = null;
 			for (const row of rows) {
 				const description = findDescription(row);
 				const amount = findAmount(row);
+				// collect dates
+				const d = parseDateFromRow(row);
+				if (d) {
+					if (!minDate || d < minDate) minDate = d;
+					if (!maxDate || d > maxDate) maxDate = d;
+				}
 				if (!amount || isLikelyNonExpense(description)) {
 					continue;
 				}
@@ -712,7 +773,17 @@
 				}
 			}
 
-			return { byCategory, totalSpending, uncategorized };
+			// estimate period: if span >= 60 days treat as 3 months, otherwise 1 month
+			let periodMonths = 1;
+			let periodText = '1 month';
+			let rangeText = '';
+			if (minDate && maxDate) {
+				const spanDays = Math.round((maxDate - minDate) / (1000 * 60 * 60 * 24));
+				rangeText = `${minDate.toISOString().slice(0,10)} → ${maxDate.toISOString().slice(0,10)}`;
+				if (spanDays >= 60) { periodMonths = 3; periodText = '3 months'; }
+			}
+
+			return { byCategory, totalSpending, uncategorized, periodMonths, periodText, rangeText };
 		}
 
 		function renderChart(byCategory) {
@@ -793,6 +864,27 @@
 				totalSpendingEl.textContent = currency(totalSpending);
 				renderChart(byCategory);
 				renderUncategorizedPanel(uncategorized);
+
+				// update core needs (housing, travel, food)
+				const housing = byCategory['Housing'] || 0;
+				const travel = byCategory['Travel'] || 0;
+				const food = (byCategory['Groceries'] || 0) + (byCategory['Food & Dining'] || 0);
+				document.getElementById('housingValue').textContent = currency(housing);
+				document.getElementById('travelValue').textContent = currency(travel);
+				document.getElementById('foodValue').textContent = currency(food);
+
+				// show period estimates if available
+				const periodInfoEl = document.getElementById('periodInfo');
+				const periodRangeEl = document.getElementById('periodRange');
+				if (typeof periodText !== 'undefined') {
+					periodInfoEl.textContent = `Estimated period: ${periodText}`;
+					periodRangeEl.textContent = rangeText || '';
+					// show per-month for each core need
+					const months = periodMonths || 1;
+					document.getElementById('housingValue').textContent += ` (${currency(housing / months)}/mo)`;
+					document.getElementById('travelValue').textContent += ` (${currency(travel / months)}/mo)`;
+					document.getElementById('foodValue').textContent += ` (${currency(food / months)}/mo)`;
+				}
 			} catch (error) {
 				console.error(error);
 				errorEl.textContent = 'Could not read the CSV file(s). Please verify the format and try again.';
