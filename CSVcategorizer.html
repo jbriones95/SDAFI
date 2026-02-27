@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>CSV Budget Visualizer</title>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<style>
+		:root {
+			color-scheme: light dark;
+			--bg: #f5f7fb;
+			--panel: #ffffff;
+			--text: #0f172a;
+			--muted: #475569;
+			--border: #dbe2ef;
+			--accent: #2563eb;
+			--danger: #dc2626;
+			--success: #16a34a;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--bg: #0b1220;
+				--panel: #111a2b;
+				--text: #e2e8f0;
+				--muted: #94a3b8;
+				--border: #273449;
+				--accent: #60a5fa;
+				--danger: #f87171;
+				--success: #4ade80;
+			}
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			background: var(--bg);
+			color: var(--text);
+			min-height: 100vh;
+			display: grid;
+			place-items: center;
+			padding: 24px;
+		}
+
+		.app {
+			width: min(100%, 980px);
+			background: var(--panel);
+			border: 1px solid var(--border);
+			border-radius: 14px;
+			padding: 20px;
+			box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+		}
+
+		h1 {
+			margin: 0 0 8px;
+			font-size: 1.5rem;
+		}
+
+		p {
+			margin: 0;
+			color: var(--muted);
+		}
+
+		.controls {
+			margin-top: 16px;
+			display: grid;
+			gap: 12px;
+			grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+			align-items: end;
+		}
+
+		label {
+			display: block;
+			font-size: 0.9rem;
+			margin-bottom: 6px;
+			color: var(--muted);
+		}
+
+		input,
+		button {
+			width: 100%;
+			border-radius: 10px;
+			border: 1px solid var(--border);
+			padding: 10px 12px;
+			font-size: 0.95rem;
+			background: transparent;
+			color: inherit;
+		}
+
+		button {
+			cursor: pointer;
+			background: var(--accent);
+			color: white;
+			border: none;
+			font-weight: 600;
+		}
+
+		.summary {
+			margin-top: 18px;
+			display: grid;
+			gap: 10px;
+			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		}
+
+		.card {
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			padding: 12px;
+		}
+
+		.card h3 {
+			margin: 0;
+			font-size: 0.85rem;
+			color: var(--muted);
+			font-weight: 600;
+		}
+
+		.value {
+			margin-top: 8px;
+			font-size: 1.35rem;
+			font-weight: 700;
+		}
+
+		.good {
+			color: var(--success);
+		}
+
+		.bad {
+			color: var(--danger);
+		}
+
+		.chart-wrap {
+			margin-top: 16px;
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			padding: 12px;
+			min-height: 360px;
+			display: grid;
+			grid-template-columns: 1fr;
+			align-items: center;
+		}
+
+		.note {
+			margin-top: 10px;
+			font-size: 0.82rem;
+			color: var(--muted);
+		}
+
+		.error {
+			margin-top: 8px;
+			color: var(--danger);
+			min-height: 1.2em;
+			font-size: 0.9rem;
+		}
+	</style>
+</head>
+<body>
+	<main class="app">
+		<h1>Bank CSV Budget Visualizer</h1>
+		<p>Upload your bank CSV to see where your spending goes and how it compares to your budget.</p>
+
+		<section class="controls">
+			<div>
+				<label for="csvFile">Bank CSV file</label>
+				<input id="csvFile" type="file" accept=".csv,text/csv" />
+			</div>
+
+			<div>
+				<label for="budgetInput">Monthly budget ($)</label>
+				<input id="budgetInput" type="number" min="0" step="0.01" placeholder="e.g. 3000" />
+			</div>
+
+			<div>
+				<button id="analyzeBtn" type="button">Analyze Spending</button>
+			</div>
+		</section>
+
+		<div class="error" id="error"></div>
+
+		<section class="summary">
+			<article class="card">
+				<h3>Total Spending</h3>
+				<div class="value" id="totalSpending">$0.00</div>
+			</article>
+			<article class="card">
+				<h3>Budget</h3>
+				<div class="value" id="budgetValue">$0.00</div>
+			</article>
+			<article class="card">
+				<h3>Remaining</h3>
+				<div class="value" id="remainingValue">$0.00</div>
+			</article>
+		</section>
+
+		<section class="chart-wrap">
+			<canvas id="spendingChart" aria-label="Spending by category chart"></canvas>
+		</section>
+
+		<p class="note">Categories are auto-detected from merchant descriptions (food, groceries, transport, housing, utilities, entertainment, health, shopping, and more).</p>
+	</main>
+
+	<script>
+		const csvFileInput = document.getElementById('csvFile');
+		const budgetInput = document.getElementById('budgetInput');
+		const analyzeBtn = document.getElementById('analyzeBtn');
+		const errorEl = document.getElementById('error');
+		const totalSpendingEl = document.getElementById('totalSpending');
+		const budgetValueEl = document.getElementById('budgetValue');
+		const remainingValueEl = document.getElementById('remainingValue');
+		const chartCanvas = document.getElementById('spendingChart');
+
+		let chart;
+
+		const categoryRules = [
+			{ name: 'Housing', keywords: ['rent', 'mortgage', 'apartment', 'hoa', 'property management'] },
+			{ name: 'Utilities', keywords: ['electric', 'water', 'gas bill', 'internet', 'wifi', 'utility', 'phone bill'] },
+			{ name: 'Groceries', keywords: ['grocery', 'supermarket', 'trader joe', 'costco', 'whole foods', 'aldi', 'kroger'] },
+			{ name: 'Food & Dining', keywords: ['restaurant', 'cafe', 'coffee', 'doordash', 'uber eats', 'grubhub', 'pizza', 'taco'] },
+			{ name: 'Transportation', keywords: ['uber', 'lyft', 'gas station', 'shell', 'chevron', 'exxon', 'metro', 'parking'] },
+			{ name: 'Entertainment', keywords: ['netflix', 'spotify', 'hulu', 'cinema', 'movie', 'concert', 'game', 'steam'] },
+			{ name: 'Health', keywords: ['pharmacy', 'cvs', 'walgreens', 'doctor', 'clinic', 'hospital', 'dental', 'vision'] },
+			{ name: 'Shopping', keywords: ['amazon', 'target', 'walmart', 'best buy', 'ikea', 'ebay', 'shop'] },
+			{ name: 'Travel', keywords: ['airbnb', 'airline', 'hotel', 'expedia', 'booking', 'southwest', 'delta'] },
+			{ name: 'Subscriptions', keywords: ['subscription', 'adobe', 'icloud', 'google one', 'microsoft 365'] },
+			{ name: 'Insurance', keywords: ['insurance', 'geico', 'state farm', 'progressive'] },
+			{ name: 'Transfers', keywords: ['transfer', 'zelle', 'venmo', 'cash app', 'paypal'] },
+			{ name: 'Income', keywords: ['payroll', 'salary', 'deposit', 'refund', 'income', 'venmo cashout'] }
+		];
+
+		function normalizeHeader(header) {
+			return header.toLowerCase().trim().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+		}
+
+		function parseCSV(text) {
+			const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+			const parsedRows = [];
+			let row = [];
+			let current = '';
+			let inQuotes = false;
+
+			for (let i = 0; i < normalized.length; i += 1) {
+				const ch = normalized[i];
+				const next = normalized[i + 1];
+
+				if (ch === '"') {
+					if (inQuotes && next === '"') {
+						current += '"';
+						i += 1;
+					} else {
+						inQuotes = !inQuotes;
+					}
+					continue;
+				}
+
+				if (ch === ',' && !inQuotes) {
+					row.push(current.trim());
+					current = '';
+					continue;
+				}
+
+				if (ch === '\n' && !inQuotes) {
+					row.push(current.trim());
+					if (row.some((cell) => cell.length > 0)) {
+						parsedRows.push(row);
+					}
+					row = [];
+					current = '';
+					continue;
+				}
+
+				current += ch;
+			}
+
+			if (current.length > 0 || row.length > 0) {
+				row.push(current.trim());
+				if (row.some((cell) => cell.length > 0)) {
+					parsedRows.push(row);
+				}
+			}
+
+			if (parsedRows.length < 2) {
+				return [];
+			}
+
+			const headers = parsedRows[0].map((header) => normalizeHeader(header));
+			return parsedRows.slice(1).map((values) => {
+				const mapped = {};
+				headers.forEach((header, index) => {
+					mapped[header] = values[index] || '';
+				});
+				return mapped;
+			});
+		}
+
+		function findKey(keys, aliases) {
+			const exact = keys.find((key) => aliases.includes(key));
+			if (exact) return exact;
+			return keys.find((key) => aliases.some((alias) => key.includes(alias)));
+		}
+
+		function inferSignedAmount(amountValue, typeValue) {
+			const raw = String(amountValue || '');
+			const amount = toNumber(raw);
+			if (!amount) return 0;
+
+			if (/\(.*\)|^-/.test(raw.trim())) {
+				return -Math.abs(amount);
+			}
+
+			const type = String(typeValue || '').toLowerCase().trim();
+			if (/debit|purchase|withdraw|payment|outflow|dr/.test(type)) {
+				return -Math.abs(amount);
+			}
+			if (/credit|deposit|refund|income|inflow|cr/.test(type)) {
+				return Math.abs(amount);
+			}
+
+			return amount;
+		}
+
+		function findAmount(row) {
+			const keys = Object.keys(row);
+			const amountKey = findKey(keys, ['amount', 'transaction amount', 'posted amount', 'value']);
+			const debitKey = findKey(keys, ['debit', 'withdrawal', 'outflow', 'money out', 'payment']);
+			const creditKey = findKey(keys, ['credit', 'deposit', 'inflow', 'money in']);
+			const typeKey = findKey(keys, ['type', 'transaction type', 'dr cr', 'debit credit']);
+
+			if (amountKey) {
+				return inferSignedAmount(row[amountKey], typeKey ? row[typeKey] : '');
+			}
+
+			const debit = debitKey ? Math.abs(toNumber(row[debitKey])) : 0;
+			const credit = creditKey ? Math.abs(toNumber(row[creditKey])) : 0;
+
+			if (debit || credit) {
+				return credit - debit;
+			}
+
+			return 0;
+		}
+
+		function toNumber(value) {
+			if (!value) return 0;
+			const cleaned = String(value)
+				.replace(/\$/g, '')
+				.replace(/,/g, '')
+				.replace(/\((.*)\)/, '-$1')
+				.trim();
+
+			const parsed = Number(cleaned);
+			return Number.isFinite(parsed) ? parsed : 0;
+		}
+
+		function findDescription(row) {
+			const keys = Object.keys(row);
+			const descriptionKey = findKey(keys, ['description', 'merchant', 'details', 'name', 'memo', 'transaction']);
+			const locationKey = findKey(keys, ['city', 'state', 'location']);
+			const primary = descriptionKey ? row[descriptionKey] : '';
+			const secondary = locationKey ? row[locationKey] : '';
+			return `${primary} ${secondary}`.toLowerCase().trim();
+		}
+
+		function categorize(description) {
+			for (const rule of categoryRules) {
+				if (rule.keywords.some((word) => description.includes(word))) {
+					return rule.name;
+				}
+			}
+			return 'Other';
+		}
+
+		function currency(value) {
+			return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(value);
+		}
+
+		function analyzeRows(rows) {
+			const byCategory = {};
+			let totalSpending = 0;
+			let negativeCount = 0;
+			let positiveCount = 0;
+
+			for (const row of rows) {
+				const amount = findAmount(row);
+				if (amount < 0) negativeCount += 1;
+				if (amount > 0) positiveCount += 1;
+			}
+
+			const treatPositiveAsSpending = negativeCount === 0 && positiveCount > 0;
+
+			for (const row of rows) {
+				const description = findDescription(row);
+				const amount = findAmount(row);
+
+				const isExpense = treatPositiveAsSpending ? amount > 0 : amount < 0;
+				if (!isExpense) {
+					continue;
+				}
+
+				const spend = Math.abs(amount);
+				const category = categorize(description);
+				byCategory[category] = (byCategory[category] || 0) + spend;
+				totalSpending += spend;
+			}
+
+			return { byCategory, totalSpending };
+		}
+
+		function renderChart(byCategory) {
+			const labels = Object.keys(byCategory);
+			const values = labels.map((label) => byCategory[label]);
+
+			if (chart) {
+				chart.destroy();
+			}
+
+			chart = new Chart(chartCanvas, {
+				type: 'doughnut',
+				data: {
+					labels,
+					datasets: [
+						{
+							label: 'Spending by Category',
+							data: values,
+							backgroundColor: [
+								'#2563eb', '#7c3aed', '#14b8a6', '#f59e0b', '#ef4444', '#10b981',
+								'#ec4899', '#0ea5e9', '#84cc16', '#f97316', '#6366f1', '#8b5cf6'
+							]
+						}
+					]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							position: 'bottom'
+						},
+						tooltip: {
+							callbacks: {
+								label(context) {
+									const label = context.label || 'Category';
+									const value = context.parsed || 0;
+									return `${label}: ${currency(value)}`;
+								}
+							}
+						}
+					}
+				}
+			});
+		}
+
+		analyzeBtn.addEventListener('click', async () => {
+			errorEl.textContent = '';
+
+			const file = csvFileInput.files?.[0];
+			if (!file) {
+				errorEl.textContent = 'Please choose a CSV file first.';
+				return;
+			}
+
+			try {
+				const text = await file.text();
+				const rows = parseCSV(text);
+
+				if (!rows.length) {
+					errorEl.textContent = 'The CSV appears empty or invalid.';
+					return;
+				}
+
+				const { byCategory, totalSpending } = analyzeRows(rows);
+
+				if (!Object.keys(byCategory).length) {
+					errorEl.textContent = 'No spending transactions were found (expenses should be negative in most bank exports).';
+					return;
+				}
+
+				const budget = Math.max(0, toNumber(budgetInput.value));
+				const remaining = budget - totalSpending;
+
+				totalSpendingEl.textContent = currency(totalSpending);
+				budgetValueEl.textContent = currency(budget);
+				remainingValueEl.textContent = currency(remaining);
+				remainingValueEl.className = `value ${remaining >= 0 ? 'good' : 'bad'}`;
+
+				renderChart(byCategory);
+			} catch (error) {
+				errorEl.textContent = 'Could not read the CSV file. Please verify the format and try again.';
+			}
+		});
+	</script>
+</body>
+</html>
