@@ -5,18 +5,43 @@
 	<meta name="viewport" content="width=device-width,initial-scale=1" />
 	<title>Adventist Budget Planner</title>
 	<style>
-		body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;max-width:900px;margin:24px auto;padding:0 18px;color:#111}
+		:root{--max-width:900px;--gutter:18px}
+		html,body{height:100%}
+		body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;max-width:var(--max-width);width:min(96%,var(--max-width));margin:24px auto;padding:0 var(--gutter);color:#111;box-sizing:border-box;min-height:100vh;display:flex;flex-direction:column}
 		h1{font-size:1.4rem;margin-bottom:8px}
-		.row{display:flex;gap:12px;align-items:center;margin:10px 0}
-		label{width:220px;font-weight:600}
-		input[type=number]{width:180px;padding:6px;border:1px solid #ccc;border-radius:6px}
-		.card{border:1px solid #eee;padding:14px;border-radius:8px;background:#fbfbfb;margin-top:12px}
+		.row{display:flex;gap:12px;align-items:center;margin:10px 0;width:100%}
+		label{flex:0 0 220px;max-width:40%;font-weight:600}
+		input[type=number]{flex:1;min-width:120px;padding:8px;border:1px solid #ccc;border-radius:6px}
+		.card{border:1px solid #eee;padding:14px;border-radius:8px;background:#fbfbfb;margin-top:12px;box-sizing:border-box;width:100%}
 		.big{font-size:1.1rem;font-weight:700}
 		.muted{color:#666;font-size:0.9rem}
-		.alloc{display:grid;grid-template-columns:1fr 120px;gap:8px;padding:6px 0}
-		.percent{color:#0b6efd;font-weight:700}
+		.alloc{display:grid;grid-template-columns:1fr 120px;gap:8px;padding:6px 0;align-items:center}
 		.note{font-size:0.9rem;color:#333;margin-top:12px}
 		footer{margin-top:18px;font-size:0.85rem;color:#666}
+
+		@media (max-width:720px){
+			label{flex-basis:160px}
+			input[type=number]{padding:10px}
+			.alloc{grid-template-columns:1fr 100px}
+		}
+
+		@media (max-width:520px){
+			.row{flex-direction:column;align-items:stretch}
+			label{width:100%;flex-basis:auto}
+			input[type=number]{width:100%}
+			.alloc{grid-template-columns:1fr;gap:6px}
+			.alloc div:last-child{text-align:right;margin-top:6px}
+			.card{padding:12px}
+		}
+
+		@media (max-height:500px){
+			body{padding-top:10px;padding-bottom:10px}
+			.card{padding:10px}
+			.big{font-size:1rem}
+		}
+
+		/* Keep range full width */
+		#titheRange{width:100%}
 	</style>
 </head>
 <body>
@@ -24,39 +49,29 @@
 	<p class="muted">Enter monthly numbers; pick tithe & offering percent (10–15%).</p>
 
 	<div class="card">
-		<div class="row">
-			<label for="income">Monthly Net Income</label>
-			<input id="income" type="number" min="0" step="0.01" placeholder="e.g. 3500" />
-		</div>
-
-		<div class="row">
-			<label for="debt">Monthly Debt Payments</label>
-			<input id="debt" type="number" min="0" step="0.01" placeholder="total minimums" />
-		</div>
-
-		<div class="row">
-			<label for="fixed">Estimated Monthly Fixed Expenses</label>
-			<input id="fixed" type="number" min="0" step="0.01" placeholder="housing, utilities, food" />
-		</div>
-
-		<div class="row">
-			<label for="titheRange">Tithe & Offering (%)</label>
+		<div class="row"><label for="income">Monthly Net Income</label><input id="income" type="number" min="0" step="0.01" placeholder="e.g. 3500" /></div>
+		<div class="row"><label for="debt">Monthly Debt Payments</label><input id="debt" type="number" min="0" step="0.01" placeholder="total minimums" /></div>
+		<div class="row"><label for="housing">Monthly Housing (rent/mortgage)</label><input id="housing" type="number" min="0" step="0.01" placeholder="rent or mortgage" /></div>
+		<div class="row"><label for="fixed">Other Monthly Fixed Expenses (utilities, food, transport)</label><input id="fixed" type="number" min="0" step="0.01" placeholder="utilities, food, transport" /></div>
+		<div class="row"><label for="titheRange">Tithe & Offering (%)</label>
 			<div style="flex:1">
-				<input id="titheRange" type="range" min="10" max="15" step="0.5" value="10" style="width:100%" />
-				<div style="display:flex;justify-content:space-between;margin-top:6px;align-items:center">
-					<div class="muted">Slide between 10% and 15%</div>
-					<div class="big"><span id="tithePct">10</span>%</div>
-				</div>
+				<input id="titheRange" type="range" min="10" max="15" step="0.5" value="10" />
+				<div style="display:flex;justify-content:space-between;margin-top:6px;align-items:center"><div class="muted">Slide between 10% and 15%</div><div class="big"><span id="tithePct">10</span>%</div></div>
 			</div>
 		</div>
 
-		<div class="card" style="background:#fff">
+		<div class="card" style="background:#fff;margin-top:12px">
 			<div class="alloc"><div>Tithe & Offering</div><div id="titheAmt" class="big">$0.00</div></div>
 			<div class="alloc"><div>Remaining Income</div><div id="remainingAmt">$0.00</div></div>
 			<hr />
 			<div class="alloc"><div>Needs (50%)</div><div id="needsAmt">$0.00</div></div>
+			<div class="alloc"><div>&nbsp;&nbsp;Housing</div><div id="housingAmt">$0.00</div></div>
+			<div class="alloc"><div>&nbsp;&nbsp;Other Fixed</div><div id="otherFixedAmt">$0.00</div></div>
+			<div class="alloc"><div>&nbsp;&nbsp;Remaining for Needs</div><div id="needsLeftAmt">$0.00</div></div>
 			<div class="alloc"><div>Savings / Investing (30%)</div><div id="saveAmt">$0.00</div></div>
+			<div class="alloc"><div>Adjusted Savings</div><div id="adjSaveAmt">$0.00</div></div>
 			<div class="alloc"><div>Guilt-free Spending (20%)</div><div id="funAmt">$0.00</div></div>
+			<div class="alloc"><div>Adjusted Guilt-free Spending</div><div id="adjFunAmt">$0.00</div></div>
 			<div class="alloc"><div>Current Debt Payments (input)</div><div id="debtAmt">$0.00</div></div>
 			<div id="advice" class="note"></div>
 		</div>
@@ -68,6 +83,7 @@
 		const incomeEl = document.getElementById('income');
 		const debtEl = document.getElementById('debt');
 		const fixedEl = document.getElementById('fixed');
+		const housingEl = document.getElementById('housing');
 		const titheRange = document.getElementById('titheRange');
 		const tithePct = document.getElementById('tithePct');
 		const titheAmt = document.getElementById('titheAmt');
@@ -76,21 +92,27 @@
 		const saveAmt = document.getElementById('saveAmt');
 		const funAmt = document.getElementById('funAmt');
 		const debtAmt = document.getElementById('debtAmt');
+		const housingAmt = document.getElementById('housingAmt');
+		const otherFixedAmt = document.getElementById('otherFixedAmt');
+		const needsLeftAmt = document.getElementById('needsLeftAmt');
+		const adjSaveAmt = document.getElementById('adjSaveAmt');
+		const adjFunAmt = document.getElementById('adjFunAmt');
 		const advice = document.getElementById('advice');
 
 		function fmt(n){return (isFinite(n) ? '$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '$0.00');}
 
 		function update(){
+			let tips = [];
 			const income = Math.max(0,parseFloat(incomeEl.value)||0);
 			const debt = Math.max(0,parseFloat(debtEl.value)||0);
 			const fixed = Math.max(0,parseFloat(fixedEl.value)||0);
-			const pct = parseFloat(titheRange.value);
+			const housing = Math.max(0,parseFloat(housingEl.value)||0);
+			const pct = parseFloat(titheRange.value || 10);
 			tithePct.textContent = pct;
 
 			const tithe = income * pct/100;
 			const remaining = Math.max(0,income - tithe);
 
-			// Ramit-style allocation after tithe: 50% needs, 30% savings/invest, 20% fun
 			const needs = remaining * 0.50;
 			const savings = remaining * 0.30;
 			const fun = remaining * 0.20;
@@ -98,12 +120,45 @@
 			titheAmt.textContent = fmt(tithe);
 			remainingAmt.textContent = fmt(remaining);
 			needsAmt.textContent = fmt(needs);
+			housingAmt.textContent = fmt(housing);
+			otherFixedAmt.textContent = fmt(fixed);
+
+			const totalFixed = housing + fixed;
+			let needsLeft = needs - totalFixed;
+			if(needsLeft < 0) needsLeft = 0;
+			needsLeftAmt.textContent = fmt(needsLeft);
 			saveAmt.textContent = fmt(savings);
 			funAmt.textContent = fmt(fun);
+
+			let shortfall = Math.max(0, totalFixed - needs);
+			let adjSavings = savings;
+			let adjFun = fun;
+			if(shortfall > 0){
+				const takeFromSavings = Math.min(shortfall, adjSavings);
+				adjSavings -= takeFromSavings;
+				shortfall -= takeFromSavings;
+				const takeFromFun = Math.min(shortfall, adjFun);
+				adjFun -= takeFromFun;
+				shortfall -= takeFromFun;
+			}
+
+			let remainingDebt = debt;
+			const coverFromSavings = Math.min(remainingDebt, adjSavings);
+			adjSavings -= coverFromSavings;
+			remainingDebt -= coverFromSavings;
+			const coverFromFun = Math.min(remainingDebt, adjFun);
+			adjFun -= coverFromFun;
+			remainingDebt -= coverFromFun;
+			const debtUncovered = Math.max(0, remainingDebt);
+
+			adjSaveAmt.textContent = fmt(adjSavings);
+			adjFunAmt.textContent = fmt(adjFun);
 			debtAmt.textContent = fmt(debt);
 
-			// Advice logic
-			let tips = [];
+			if(debtUncovered > 0){
+				tips.push('Your monthly obligations exceed the suggested buckets; $'+debtUncovered.toFixed(2)+' of debt is not covered by allocations — consider trimming expenses or increasing income.');
+			}
+
 			if(income===0){ tips.push('Enter your monthly net income to see recommendations.'); }
 			if(debt>0){
 				if(debt > savings){
@@ -115,15 +170,14 @@
 				tips.push('No debt entered — prioritize building 3–6 months emergency fund, then increase investments.');
 			}
 
-			if(fixed > needs){
-				tips.push('Your estimated fixed expenses exceed the 50% needs allocation; review fixed costs or reduce discretionary spending.');
+			if(totalFixed > needs){
+				tips.push('Your housing + fixed expenses exceed the 50% needs allocation. The planner suggests covering the shortfall by reducing savings or guilt-free spending.');
 			}
 
 			advice.innerHTML = tips.map(t => '• '+t).join('<br>');
 		}
 
-		[incomeEl,debtEl,fixedEl,titheRange].forEach(el => el.addEventListener('input', update));
-		// initial
+		[incomeEl,debtEl,fixedEl,housingEl,titheRange].forEach(el => el.addEventListener('input', update));
 		update();
 	</script>
 </body>
